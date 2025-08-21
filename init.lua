@@ -25,3 +25,7 @@ end
 
 require "lazy_setup"
 require "polish"
+
+-- Сохранять выделение после смещения
+vim.api.nvim_set_keymap("v", ">", ">gv", { noremap = true })
+vim.api.nvim_set_keymap("v", "<", "<gv", { noremap = true })
