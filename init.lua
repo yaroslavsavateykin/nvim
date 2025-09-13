@@ -29,3 +29,11 @@ require "polish"
 -- Сохранять выделение после смещения
 vim.api.nvim_set_keymap("v", ">", ">gv", { noremap = true })
 vim.api.nvim_set_keymap("v", "<", "<gv", { noremap = true })
+
+-- Настройка буфера обмена
+vim.opt.clipboard = 'unnamedplus'  -- для Linux
+-- vim.opt.clipboard = 'unnamed'   -- для macOS
+-- vim.opt.clipboard = 'unnamedplus'  -- для Windows
+
+-- Или более полная настройка
+vim.opt.clipboard:append({ 'unnamed', 'unnamedplus' })
