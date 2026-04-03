@@ -36,6 +36,16 @@ return {
       map("n", "<C-t>", "<cmd>ToggleTerm<CR>", { noremap = true, silent = true })
       map("i", "<C-t>", "<Esc><cmd>ToggleTerm<CR>", { noremap = true, silent = true })
       map("t", "<C-t>", "<C-\\><C-n>:ToggleTerm<CR>", { noremap = true, silent = true })
+
+    require("toggleterm").setup {
+      shell = "/bin/bash",
+      open_mapping = [[<C-\>]],
+      direction = "horizontal",
+      shade_terminals = false,
+      start_in_insert = true,
+      persist_size = true,
+    }
+
     end,
   },
 }

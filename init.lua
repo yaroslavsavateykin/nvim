@@ -23,6 +23,11 @@ if not pcall(require, "lazy") then
   vim.cmd.quit()
 end
 
+
+-- MUST be set before lazy.nvim / AstroNvim loads
+vim.g.mapleader = " "
+vim.g.maplocalleader = " "
+
 require "lazy_setup"
 require "polish"
 
@@ -31,9 +36,66 @@ vim.api.nvim_set_keymap("v", ">", ">gv", { noremap = true })
 vim.api.nvim_set_keymap("v", "<", "<gv", { noremap = true })
 
 -- Настройка буфера обмена
+-- Принудительно используем OSC52 как clipboard
+
+
+-- И делаем unnamedplus по умолчанию
 vim.opt.clipboard = 'unnamedplus'  -- для Linux
 -- vim.opt.clipboard = 'unnamed'   -- для macOS
 -- vim.opt.clipboard = 'unnamedplus'  -- для Windows
 
 -- Или более полная настройка
 vim.opt.clipboard:append({ 'unnamed', 'unnamedplus' })
+
+
+-- =========================
+-- HARD LSP INIT (DEBUG SAFE)
+-- =========================
+
+-- mouse
+vim.o.mouse = "a"
+
+-- helpers
+local map = vim.keymap.set
+
+-- LSP basic bindings
+map("n", "K", function()
+  vim.lsp.buf.hover()
+end, { desc = "LSP Hover" })
+
+map("n", "gd", function()
+  vim.lsp.buf.definition()
+end, { desc = "LSP Goto Definition" })
+
+map("n", "<leader>cr", function()
+  vim.lsp.buf.rename()
+end, { desc = "LSP Rename" })
+
+map("n", "<leader>ca", function()
+  vim.lsp.buf.code_action()
+end, { desc = "LSP Code Action" })
+
+-- mouse hover
+map("n", "<RightMouse>", function()
+  vim.lsp.buf.hover()
+end, { desc = "LSP Hover (mouse)" })
+
+
+-- FOLDS SETTIGNS
+vim.opt.viewoptions = { "cursor", "folds", "slash", "unix" }
+
+
+
+vim.api.nvim_create_augroup("remember_folds", { clear = true })
+
+vim.api.nvim_create_autocmd("BufWinLeave", {
+  group = "remember_folds",
+  pattern = "*",
+  command = "silent! mkview",
+})
+
+vim.api.nvim_create_autocmd("BufWinEnter", {
+  group = "remember_folds",
+  pattern = "*",
+  command = "silent! loadview",
+})
