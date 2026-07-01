@@ -20,12 +20,12 @@ return {
     },
   },
 
-  -- Терминал снизу
+  -- Всплывающий терминал
 
   {
     "akinsho/toggleterm.nvim",
     opts = {
-      direction = "horizontal",
+      direction = "float",
       size = 15,
       -- open_mapping можно оставить nil, мы явно задаём маппинги в config
       open_mapping = nil,
@@ -33,9 +33,9 @@ return {
     config = function(_, opts)
       require("toggleterm").setup(opts)
       local map = vim.keymap.set
-      map("n", "<C-t>", "<cmd>ToggleTerm<CR>", { noremap = true, silent = true })
-      map("i", "<C-t>", "<Esc><cmd>ToggleTerm<CR>", { noremap = true, silent = true })
-      map("t", "<C-t>", "<C-\\><C-n>:ToggleTerm<CR>", { noremap = true, silent = true })
+      map("n", "<C-\\>", "<cmd>ToggleTerm<CR>", { noremap = true, silent = true })
+      map("i", "<C-\\>", "<Esc><cmd>ToggleTerm<CR>", { noremap = true, silent = true })
+      map("t", "<C-\\>", "<C-\\><C-n>:ToggleTerm<CR>", { noremap = true, silent = true })
     end,
   },
 }
