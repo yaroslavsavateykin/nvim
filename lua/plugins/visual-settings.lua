@@ -244,53 +244,5 @@ return {
     end,
   },
 
-  -- Всплывающий терминал
-  {
-    "akinsho/toggleterm.nvim",
 
-    opts = {
-      direction = "float",
-      size = 15,
-      open_mapping = nil,
-    },
-
-    config = function(_, opts)
-      require("toggleterm").setup(opts)
-
-      local map = vim.keymap.set
-
-      map(
-        "n",
-        "<C-\\>",
-        "<cmd>ToggleTerm<cr>",
-        {
-          noremap = true,
-          silent = true,
-          desc = "Открыть терминал",
-        }
-      )
-
-      map(
-        "i",
-        "<C-\\>",
-        "<Esc><cmd>ToggleTerm<cr>",
-        {
-          noremap = true,
-          silent = true,
-          desc = "Открыть терминал",
-        }
-      )
-
-      map(
-        "t",
-        "<C-\\>",
-        "<C-\\><C-n><cmd>ToggleTerm<cr>",
-        {
-          noremap = true,
-          silent = true,
-          desc = "Закрыть терминал",
-        }
-      )
-    end,
-  },
 }
