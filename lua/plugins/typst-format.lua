@@ -1,3 +1,28 @@
+local function format_typst(bufnr)
+  local fileencoding = vim.bo[bufnr].fileencoding
+
+  if fileencoding ~= "" and fileencoding ~= "utf-8" then
+    vim.schedule(function()
+      vim.notify(
+        (
+          "Skipped typstyle for %s: buffer encoding is %s, expected utf-8"
+        ):format(vim.api.nvim_buf_get_name(bufnr), fileencoding),
+        vim.log.levels.WARN,
+        { title = "Typst Format" }
+      )
+    end)
+
+    return
+  end
+
+  require("conform").format({
+    bufnr = bufnr,
+    formatters = { "typstyle" },
+    timeout_ms = 3000,
+    lsp_format = "never",
+  })
+end
+
 return {
   {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
@@ -35,12 +60,7 @@ return {
       {
         "<leader>lf",
         function()
-          require("conform").format({
-            bufnr = 0,
-            formatters = { "typstyle" },
-            timeout_ms = 3000,
-            lsp_format = "never",
-          })
+          format_typst(0)
         end,
         desc = "Format Typst",
       },
@@ -57,12 +77,7 @@ return {
         pattern = "*.typ",
 
         callback = function(args)
-          require("conform").format({
-            bufnr = args.buf,
-            formatters = { "typstyle" },
-            timeout_ms = 3000,
-            lsp_format = "never",
-          })
+          format_typst(args.buf)
         end,
       })
     end,
