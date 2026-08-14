@@ -7,10 +7,9 @@ return {
     "AstroNvim/astrolsp",
     opts = {
       features = {
-        -- inlay_hints = true,
         signature_help = true,
         semantic_tokens=true,
-        inlay_hints = true,
+        -- inlay_hints = true,
       },
 
       config = {
