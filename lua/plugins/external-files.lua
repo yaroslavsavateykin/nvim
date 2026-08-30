@@ -16,7 +16,7 @@ local external_file_patterns = {
   "*.GIF",
   "*.bmp",
   "*.BMP",
-  "*.svg",
+  -- "*.svg",
   "*.SVG",
   "*.tif",
   "*.TIF",
