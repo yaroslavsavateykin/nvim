@@ -955,6 +955,8 @@ return {
     "AstroNvim/astrolsp",
 
     opts = function(_, opts)
+      local python_env = require "user.python_env"
+
       opts.servers = opts.servers or {}
 
       -- Оставляем один type checker: basedpyright.
@@ -988,6 +990,35 @@ return {
         old_basedpyright.on_init
       local previous_on_attach =
         old_basedpyright.on_attach
+      local previous_root_dir =
+        old_basedpyright.root_dir
+      local previous_on_new_config =
+        old_basedpyright.on_new_config
+
+      -- Определение окружения живёт в user.python_env: conda, venv,
+      -- .venv/venv/env в корне проекта, python3/python из PATH и
+      -- PYTHONPATH -> basedpyright.analysis.extraPaths. На старте известен
+      -- только cwd - точное окружение каждого проекта уточняется ниже в
+      -- on_new_config (root уже разрешён) и в on_attach (буфер известен).
+      local base_settings = vim.tbl_deep_extend(
+        "force",
+        old_basedpyright.settings or {},
+        {
+          basedpyright = {
+            analysis = {
+              diagnosticMode = "openFilesOnly",
+              typeCheckingMode = "basic",
+              autoSearchPaths = true,
+              useLibraryCodeForTypes = true,
+            },
+          },
+        }
+      )
+
+      local startup_settings = python_env.settings(
+        python_env.detect(),
+        base_settings
+      )
 
       opts.config.basedpyright =
         vim.tbl_deep_extend(
@@ -996,7 +1027,8 @@ return {
           {
             capabilities = vim.tbl_deep_extend(
               "force",
-              old_basedpyright.capabilities or {},
+              old_basedpyright.capabilities
+                or {},
               {
                 notebookDocument = {
                   synchronization = {
@@ -1012,6 +1044,38 @@ return {
               -- очищенный текст всех code-cells.
               allow_incremental_sync = false,
             },
+
+            -- lspconfig вызывает root_dir как fun(fname, bufnr) и читает
+            -- root_markers только в native-режиме (vim.lsp.config), который
+            -- здесь выключен, поэтому маркеры задаются функцией. Свои
+            -- root_markers не перетираем, а дополняем.
+            root_dir = function(fname, bufnr)
+              local root = python_env.detect_root(bufnr)
+              if root and root ~= "" and root ~= fname then
+                return root
+              end
+              if previous_root_dir then
+                if type(previous_root_dir) == "function" then
+                  return previous_root_dir(fname, bufnr)
+                end
+                return previous_root_dir
+              end
+            end,
+
+            -- Уточняем окружение под конкретный root до старта клиента.
+            on_new_config = function(new_config, root_dir)
+              if previous_on_new_config then
+                previous_on_new_config(new_config, root_dir)
+              end
+
+              local env = python_env.detect_at(
+                root_dir or python_env.detect_root(nil)
+              )
+              new_config.settings = python_env.settings(
+                env,
+                new_config.settings
+              )
+            end,
 
             on_init = function(
               client,
@@ -1128,22 +1192,21 @@ return {
                   notebook,
                   client
                 )
+              else
+                -- Обычный python-буфер: уточняем окружение под его проект
+                -- (conda/venv/.venv/PYTHONPATH) и сообщаем basedpyright.
+                -- Для notebook-буферов интерпретатор задаёт jupynvim.
+                python_env.attach(client, bufnr)
               end
             end,
 
-            settings = {
-              basedpyright = {
-                analysis = {
-                  diagnosticMode =
-                    "openFilesOnly",
-                  typeCheckingMode = "basic",
-                  autoSearchPaths = true,
-                  useLibraryCodeForTypes = true,
-                },
-              },
-            },
+            settings = startup_settings,
           }
         )
+
+      -- :PythonEnv, :PythonEnvRefresh и проверка окружения при
+      -- DirChanged/BufEnter без перезапуска LSP при неизменном окружении.
+      python_env.setup()
 
       opts.formatting = opts.formatting or {}
       opts.formatting.disabled =
@@ -1383,6 +1446,42 @@ return {
         callback = apply_markdown_palette,
       })
       apply_markdown_palette()
+
+      ----------------------------------------------------------
+      -- Автозакрытие скобок ( ) [ ] { } и кавычек в ячейках.
+      --
+      -- nvim-autopairs не подключается к нередактируемым буферам,
+      -- а буфер jupynvim стартует в командном режиме (modifiable=false)
+      -- и становится редактируемым только при входе в ячейку. Поэтому
+      -- автопарки переподключаются при переходе в режим вставки или
+      -- когда буфер снова становится модифицируемым.
+      ----------------------------------------------------------
+      local autopairs_group = vim.api.nvim_create_augroup(
+        "JupynvimAutopairs",
+        { clear = true }
+      )
+
+      local function reattach_autopairs(bufnr)
+        if not vim.api.nvim_buf_is_valid(bufnr) then return end
+        if not notebook_for(bufnr) then return end
+        if not vim.bo[bufnr].modifiable then return end
+
+        local ok, npairs = pcall(require, "nvim-autopairs")
+        if ok and npairs and npairs.force_attach then
+          npairs.force_attach(bufnr)
+        end
+      end
+
+      vim.api.nvim_create_autocmd({ "InsertEnter", "OptionSet" }, {
+        group = autopairs_group,
+        desc = "Reattach nvim-autopairs when a jupynvim cell becomes editable",
+        callback = function(args)
+          if args.event == "OptionSet" and args.match ~= "modifiable" then
+            return
+          end
+          reattach_autopairs(args.buf)
+        end,
+      })
     end,
   },
 }

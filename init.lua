@@ -26,6 +26,12 @@ end
 require "lazy_setup"
 require "polish"
 
+-- Use four spaces for indentation in every buffer.
+vim.opt.expandtab = true
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.softtabstop = 4
+
 -- Сохранять выделение после смещения
 vim.api.nvim_set_keymap("v", ">", ">gv", { noremap = true })
 vim.api.nvim_set_keymap("v", "<", "<gv", { noremap = true })
@@ -37,13 +43,3 @@ vim.opt.clipboard = 'unnamedplus'  -- для Linux
 
 -- Или более полная настройка
 vim.opt.clipboard:append({ 'unnamed', 'unnamedplus' })
-
-vim.api.nvim_create_autocmd("FileType", {
-	pattern = "go",
-	callback = function()
-		vim.opt_local.expandtab = false
-		vim.opt_local.tabstop = 4
-		vim.opt_local.shiftwidth = 4
-		vim.opt_local.softtabstop = 0
-	end,
-})

@@ -3,6 +3,31 @@ return {
 
   ft = { "typst" },
 
+  init = function()
+    local function capture_selection()
+      local command
+
+      if vim.env.WAYLAND_DISPLAY and vim.fn.executable "grim" == 1 and vim.fn.executable "slurp" == 1 and vim.fn.executable "wl-copy" == 1 then
+        command = "grim -g \"$(slurp)\" - | wl-copy --type image/png"
+      elseif vim.fn.executable "maim" == 1 and vim.fn.executable "xclip" == 1 then
+        command = "maim -s | xclip -selection clipboard -target image/png -i"
+      else
+        vim.notify("Для снимка области установите grim slurp wl-clipboard (Wayland) или maim xclip (X11)", vim.log.levels.ERROR)
+        return
+      end
+
+      vim.fn.system(command)
+      if vim.v.shell_error ~= 0 then
+        vim.notify("Не удалось создать снимок выбранной области", vim.log.levels.ERROR)
+        return
+      end
+
+      vim.cmd "PasteImage"
+    end
+
+    vim.api.nvim_create_user_command("PasteScreenshotSelection", capture_selection, {})
+  end,
+
   opts = function()
     local function current_file_dir()
       local file = vim.api.nvim_buf_get_name(0)
@@ -87,6 +112,12 @@ return {
       "<cmd>PasteImage<cr>",
       mode = { "n", "i" },
       desc = "Paste clipboard image",
+    },
+    {
+      "<A-S-s>",
+      "<cmd>PasteScreenshotSelection<cr>",
+      mode = { "n", "i" },
+      desc = "Capture selected screen area",
     },
   },
 }

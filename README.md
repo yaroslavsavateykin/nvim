@@ -55,6 +55,7 @@ nvim
 | Jupyter notebooks (`.ipynb`) | Python 3, Jupyter/IPython | `python3 -m pip install --user jupyter ipython` |
 | marimo notebooks (`.py`) | Python 3 и `marimo` | `python3 -m pip install --user marimo` |
 | Вставка изображений в Typst | `wl-clipboard` в Wayland или `xclip` в X11 | См. базовые зависимости |
+| Снимок выделенной области для Typst | Wayland: `grim`, `slurp`, `wl-clipboard`; X11: `maim`, `xclip` | См. ниже |
 | PDF в терминале | `fancy-cat` | `cargo install --git https://github.com/freref/fancy-cat.git` |
 | Интеграция OpenCode | CLI `opencode` | Установите по [инструкции OpenCode](https://opencode.ai/docs) |
 
@@ -62,7 +63,7 @@ Mason управляет языковыми серверами и форматт
 
 ### Typst
 
-Для `.typ` включены Tinymist, форматирование `typstyle` при сохранении и вставка изображения через `<leader>ip`. `typstyle` получает Mason автоматически; бинарник `typst` устанавливается отдельно, потому что он требуется для компиляции документов, а не для LSP.
+Для `.typ` включены Tinymist, форматирование `typstyle` при сохранении и вставка изображения через `<leader>ip`. Сочетание <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> предлагает выделить область экрана, сохраняет снимок в каталог изображений проекта и вставляет `#image(...)` в документ. В Wayland для этого установите `grim`, `slurp` и `wl-clipboard`; в X11 — `maim` и `xclip`. `typstyle` получает Mason автоматически; бинарник `typst` устанавливается отдельно, потому что он требуется для компиляции документов, а не для LSP.
 
 ### Python, Jupyter и marimo
 
