@@ -1,25 +1,14 @@
 return {
-    {
+  {
     "linux-cultist/venv-selector.nvim",
-    dependencies = {
-      "neovim/nvim-lspconfig",
-      "mfussenegger/nvim-dap",
-      "mfussenegger/nvim-dap-python", --optional
-      { "nvim-telescope/telescope.nvim", branch = "0.1.x", dependencies = { "nvim-lua/plenary.nvim" } },
-    },
-    lazy = false,
-    --branch = "regexp", -- This is the regexp branch, use this for the new version
-    keys = {
-      { ",v", "<cmd>VenvSelect<cr>" },
-    },
-    search = {
-      my_venvs = {
-        command = "fd python$ ~/",
-      },
-    },
+    cmd = { "VenvSelect", "VenvSelectCache" },
+    dependencies = { "neovim/nvim-lspconfig", "nvim-telescope/telescope.nvim" },
+    keys = { { ",v", "<cmd>VenvSelect<cr>", desc = "Select Python environment" } },
     opts = {
-
-      -- Your settings go here
+      options = { enable_default_searches = false, cached_venv_automatic_activation = false },
+      search = {
+        project = { command = "$FD '/bin/python$' $CWD --hidden --no-ignore --max-depth 5 --exclude node_modules --exclude .git" },
+      },
     },
   },
 }

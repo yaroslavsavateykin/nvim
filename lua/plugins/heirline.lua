@@ -5,8 +5,8 @@ return {
     opts = function(_, opts)
       local marimo_status = {
         condition = function()
-          local ok, marimo =
-            pcall(require, "marimo")
+          local marimo = package.loaded["marimo"]
+          local ok = marimo ~= nil
 
           if not ok then
             return false
@@ -17,8 +17,8 @@ return {
         end,
 
         provider = function()
-          local ok, marimo =
-            pcall(require, "marimo")
+          local marimo = package.loaded["marimo"]
+          local ok = marimo ~= nil
 
           if not ok then
             return ""

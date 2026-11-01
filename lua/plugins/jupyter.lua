@@ -7,6 +7,14 @@ end
 local format_timers = {}
 local notebook_for
 local markdown_extmarks = {}
+local render_timers, render_keys = {}, {}
+local inline_query
+
+local function cancel_render(bufnr)
+  local timer = render_timers[bufnr]
+  render_timers[bufnr] = nil
+  if timer and not timer:is_closing() then timer:stop(); timer:close() end
+end
 
 local function reconcile_undo_cells(bufnr)
   local notebook = notebook_for(bufnr)
@@ -67,11 +75,12 @@ local function clear_render_markdown_cells(bufnr)
 end
 
 local function render_inline_markers(bufnr, parser, ranges, namespace)
-  local query = vim.treesitter.query.parse("markdown_inline", [[
+  inline_query = inline_query or vim.treesitter.query.parse("markdown_inline", [[
     (strong_emphasis) @strong
     (emphasis) @emphasis
     (code_span) @code
   ]])
+  local query = inline_query
 
   local function in_markdown(start_row, end_row)
     for _, range in ipairs(ranges) do
@@ -167,6 +176,13 @@ local function render_markdown_cells(bufnr)
   local win = vim.fn.bufwinid(bufnr)
   if win == -1 then return end
 
+  local bounds = vim.api.nvim_win_call(win, function()
+    return { vim.fn.line("w0") - 1, vim.fn.line("w$") }
+  end)
+  local top, bottom = bounds[1], bounds[2]
+  local key = table.concat({ vim.api.nvim_buf_get_changedtick(bufnr), top, bottom, vim.fn.mode(true) }, ":")
+  if render_keys[bufnr] == key then return end
+  local parser, saved_regions
   local ok, err = xpcall(function()
     local render_state = require("render-markdown.state")
     render_state.attach()
@@ -175,16 +191,19 @@ local function render_markdown_cells(bufnr)
     local markdown_ranges = {}
     local parser_regions = {}
     for _, range in ipairs(ranges) do
-      if range.type == "markdown" and range.stop > range.start then
-        table.insert(markdown_ranges, { range.start, range.stop })
-        local last_row = range.stop - 1
-        local lines = vim.api.nvim_buf_get_lines(bufnr, last_row, range.stop, false)
+      if range.type == "markdown" and range.stop > range.start
+        and range.stop > top - 20 and range.start < bottom + 20 then
+        local first = math.max(range.start, top - 100)
+        local stop = math.min(range.stop, bottom + 100)
+        table.insert(markdown_ranges, { first, stop })
+        local last_row = stop - 1
+        local lines = vim.api.nvim_buf_get_lines(bufnr, last_row, stop, false)
         local last_line = lines[1] or ""
         table.insert(parser_regions, {
           {
-            range.start,
+            first,
             0,
-            vim.api.nvim_buf_get_offset(bufnr, range.start),
+            vim.api.nvim_buf_get_offset(bufnr, first),
             last_row,
             #last_line,
             vim.api.nvim_buf_get_offset(bufnr, last_row) + #last_line,
@@ -199,7 +218,8 @@ local function render_markdown_cells(bufnr)
     local namespace = vim.api.nvim_create_namespace("JupynvimRenderMarkdownCells")
     local mode_util = require("render-markdown.lib.env").mode
     local config = render_state.get(bufnr)
-    local parser = vim.treesitter.get_parser(bufnr, "markdown")
+    parser = vim.treesitter.get_parser(bufnr, "markdown")
+    saved_regions = parser:included_regions()
     local marks = {}
 
     -- A single parser with several disjoint regions can create only the
@@ -245,6 +265,9 @@ local function render_markdown_cells(bufnr)
     end
   end, debug.traceback)
 
+  -- Restore even when a handler throws; never leave the shared parser on a cell.
+  if parser and saved_regions then pcall(parser.set_included_regions, parser, saved_regions) end
+  if ok then render_keys[bufnr] = key end
   if not ok then
     clear_render_markdown_cells(bufnr)
     vim.notify_once(
@@ -253,6 +276,17 @@ local function render_markdown_cells(bufnr)
       { title = "Jupyter notebook" }
     )
   end
+end
+
+local function schedule_render(bufnr)
+  cancel_render(bufnr)
+  local timer = vim.uv.new_timer()
+  render_timers[bufnr] = timer
+  timer:start(120, 0, vim.schedule_wrap(function()
+    if render_timers[bufnr] ~= timer then return end
+    cancel_render(bufnr)
+    if vim.api.nvim_buf_is_valid(bufnr) then render_markdown_cells(bufnr) end
+  end))
 end
 
 local function notebook_is_busy(notebook)
@@ -916,8 +950,8 @@ local function setup_notebook_buffer(bufnr)
       desc =
         "Format Jupyter code cells before saving",
       callback = function()
+        -- Whole-notebook formatting is explicit (<leader>nF), not N subprocesses per save.
         cancel_format_timer(bufnr)
-        format_notebook_all(bufnr, false)
       end,
     }
   )
@@ -930,6 +964,8 @@ local function setup_notebook_buffer(bufnr)
       callback = function()
         cancel_format_timer(bufnr)
         clear_render_markdown_cells(bufnr)
+        cancel_render(bufnr)
+        render_keys[bufnr] = nil
       end,
     }
   )
@@ -956,6 +992,8 @@ return {
 
     opts = function(_, opts)
       local python_env = require "user.python_env"
+      -- Jupynvim 0.4.2's notebook-only config/Full-sync path uses the native API.
+      opts.native_lsp_config = true
 
       opts.servers = opts.servers or {}
 
@@ -974,6 +1012,8 @@ return {
       add_unique(opts.servers, "basedpyright")
 
       opts.handlers = opts.handlers or {}
+      -- AstroNvim 5 supplies a legacy handler at [1]; replace it along with native mode.
+      opts.handlers[1] = function(server) vim.lsp.enable(server) end
 
       for _, server in ipairs(
         blocked_python_servers
@@ -1010,6 +1050,7 @@ return {
               typeCheckingMode = "basic",
               autoSearchPaths = true,
               useLibraryCodeForTypes = true,
+              exclude = { "**/.venv", "**/venv", "**/node_modules", "**/__pycache__", "**/build", "**/dist", "**/.git" },
             },
           },
         }
@@ -1039,26 +1080,27 @@ return {
               }
             ),
             flags = {
-              -- Критично для jupynvim:
-              -- каждый didChange должен отправлять полный
-              -- очищенный текст всех code-cells.
-              allow_incremental_sync = false,
+              -- Jupynvim overrides this on its separate notebook configs only.
+              allow_incremental_sync = true,
+              debounce_text_changes = 150,
             },
 
             -- lspconfig вызывает root_dir как fun(fname, bufnr) и читает
             -- root_markers только в native-режиме (vim.lsp.config), который
             -- здесь выключен, поэтому маркеры задаются функцией. Свои
             -- root_markers не перетираем, а дополняем.
-            root_dir = function(fname, bufnr)
-              local root = python_env.detect_root(bufnr)
-              if root and root ~= "" and root ~= fname then
-                return root
-              end
-              if previous_root_dir then
-                if type(previous_root_dir) == "function" then
-                  return previous_root_dir(fname, bufnr)
-                end
-                return previous_root_dir
+            root_dir = function(bufnr, on_dir)
+              on_dir(python_env.detect_root(bufnr))
+            end,
+            reuse_client = function(client, config)
+              -- Plain files must never reuse a notebook's full-sync/kernel client.
+              return client.name == config.name and client.root_dir == config.root_dir
+                and client.config.flags.allow_incremental_sync ~= false
+            end,
+            before_init = function(_, config)
+              if old_basedpyright.before_init then old_basedpyright.before_init(_, config) end
+              if not (config.flags and config.flags.allow_incremental_sync == false) then
+                config.settings = python_env.settings(python_env.detect_at(config.root_dir or python_env.detect_root(nil)), config.settings)
               end
             end,
 
@@ -1119,7 +1161,13 @@ return {
                 then
                   params = vim.deepcopy(params)
 
-                  local notebook = notebook_for(bufnr)
+                  -- A client may serve several buffers: derive the notebook from the URI,
+                  -- never from the first buffer captured by on_attach.
+                  local uri = params.notebookDocument and params.notebookDocument.uri
+                  local path = uri and (uri:match("^jupynvim:(.*)$")
+                    or (uri:match("^file:") and vim.uri_to_fname(uri)))
+                  local notebook_buf = path and vim.fn.bufnr(path) or -1
+                  local notebook = notebook_buf ~= -1 and notebook_for(notebook_buf) or nil
                   local markdown_ids = {}
                   if notebook then
                     for _, cell in ipairs(notebook.cells) do
@@ -1185,7 +1233,6 @@ return {
               )
               if ok and notebook then
                 local notebook_lsp = require("jupynvim.notebook_lsp")
-                pcall(notebook_lsp.on_close, bufnr)
                 pcall(
                   notebook_lsp.on_attach,
                   bufnr,
@@ -1299,25 +1346,17 @@ return {
         end
 
         if notebook_for(bufnr) then
+          require("user.large_buffer").check(bufnr)
           local jupynvim_markdown = require("jupynvim.markdown")
           if not jupynvim_markdown._render_markdown_adapter then
             jupynvim_markdown.render = function() end
             jupynvim_markdown._render_markdown_adapter = true
           end
-          if vim.treesitter and vim.treesitter.start then
+          if not vim.b[bufnr].large_buf and vim.treesitter and vim.treesitter.start then
             pcall(vim.treesitter.start, bufnr, "python")
           end
           setup_notebook_buffer(bufnr)
-          vim.schedule(function()
-            if vim.api.nvim_buf_is_valid(bufnr) then
-              render_markdown_cells(bufnr)
-            end
-          end)
-          vim.defer_fn(function()
-            if vim.api.nvim_buf_is_valid(bufnr) then
-              render_markdown_cells(bufnr)
-            end
-          end, 100)
+          schedule_render(bufnr)
         end
       end
 
@@ -1357,10 +1396,8 @@ return {
           "BufWinEnter",
           "TextChanged",
           "TextChangedI",
-          "CursorMoved",
           "InsertEnter",
           "InsertLeave",
-          "ModeChanged",
           "WinScrolled",
           "ColorScheme",
         },
@@ -1373,18 +1410,10 @@ return {
               return
             end
 
-            reconcile_undo_cells(args.buf)
-
-            vim.schedule(function()
-              if vim.api.nvim_buf_is_valid(args.buf) then
-                render_markdown_cells(args.buf)
-                pcall(
-                  vim.diagnostic.show,
-                  nil,
-                  args.buf
-                )
-              end
-            end)
+            if args.event == "ColorScheme" then render_keys[args.buf] = nil end
+            -- Undo reconciliation (including replace_cells RPC) runs only in u/C-r.
+            -- Diagnostics are already event-driven by Neovim/Jupynvim.
+            schedule_render(args.buf)
           end,
         }
       )

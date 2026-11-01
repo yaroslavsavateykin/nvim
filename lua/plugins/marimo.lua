@@ -43,15 +43,28 @@ local function make_empty_notebook()
   vim.cmd("write")
 end
 
+local pending = {}
+local function cancel_open(bufnr)
+  local timer = pending[bufnr]
+  pending[bufnr] = nil
+  if timer and not timer:is_closing() then timer:stop(); timer:close() end
+end
+
 local function open_full_editor(marimo, bufnr, path)
+  cancel_open(bufnr)
   local attempts = 0
+  local timer = vim.uv.new_timer()
+  pending[bufnr] = timer
 
   local function try_open()
+    if pending[bufnr] ~= timer then return end
+    if not vim.api.nvim_buf_is_valid(bufnr) then cancel_open(bufnr); return end
     attempts = attempts + 1
 
     local session = marimo.get_session(bufnr)
 
     if session then
+      cancel_open(bufnr)
       local conn = session.conn
 
       local url = string.format(
@@ -85,25 +98,24 @@ local function open_full_editor(marimo, bufnr, path)
 
     -- Ждём пока marimo.nvim создаст session
     if attempts < 80 then
-      vim.defer_fn(try_open, 250)
       return
     end
 
+    cancel_open(bufnr)
     vim.notify(
       "[marimo] failed to connect",
       vim.log.levels.ERROR
     )
   end
 
-  try_open()
+  timer:start(0, 250, vim.schedule_wrap(try_open))
 end
 
 return {
   {
     "bri-ijk/marimo.nvim",
 
-    -- Грузим при работе с Python
-    ft = "python",
+    cmd = { "MarimoStart", "MarimoStop", "MarimoAttach", "MarimoDetach", "MarimoStatus" },
 
     opts = {
       -- Браузер откроем сами без kiosk=true
@@ -128,6 +140,11 @@ return {
       local marimo = require("marimo")
 
       marimo.setup(opts)
+      local stop = marimo.stop
+      marimo.stop = function(...)
+        for buf in pairs(pending) do cancel_open(buf) end
+        return stop(...)
+      end
 
       ----------------------------------------------------------
       -- Browser -> Neovim
@@ -143,18 +160,28 @@ return {
       vim.api.nvim_create_autocmd({
         "FocusGained",
         "BufEnter",
-        "CursorHold",
-        "CursorHoldI",
+        "BufWritePost",
       }, {
         group = sync_group,
 
-        callback = function()
-          if vim.bo.buftype == "" then
-            vim.cmd("silent! checktime")
+        callback = function(args)
+          local buf = args.buf
+          if vim.api.nvim_buf_is_valid(buf) and marimo.get_session(buf)
+            and vim.bo[buf].buftype == "" and not vim.bo[buf].modified then
+            vim.api.nvim_buf_call(buf, function() vim.cmd("silent! checktime " .. buf) end)
           end
         end,
       })
 
+      vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+        group = sync_group, callback = function(args) cancel_open(args.buf) end,
+      })
+      vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = sync_group, callback = function()
+          for buf in pairs(pending) do cancel_open(buf) end
+        end,
+      })
+      -- Upstream closes websocket sessions on BufDelete and its managed server on VimLeavePre.
       ----------------------------------------------------------
       -- Переопределяем ТОЛЬКО :MarimoStart
       ----------------------------------------------------------

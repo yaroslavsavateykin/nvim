@@ -1,68 +1,25 @@
--- ~/.config/nvim/lua/plugins/snacks-image.lua
-
+-- PDFs use the system viewer by default (external-files.lua).
+-- :PDFReader remains an explicit opt-in to the embedded reader.
 return {
   "r-pletnev/pdfreader.nvim",
-
-  lazy = false,
-
-  dependencies = {
-    "folke/snacks.nvim",
-    "nvim-telescope/telescope.nvim",
-  },
-
+  cmd = { "PDFReader", "PDFOpen" },
+  dependencies = { "folke/snacks.nvim", "nvim-telescope/telescope.nvim" },
   config = function()
     require("pdfreader").setup()
-
-    local group = vim.api.nvim_create_augroup(
-      "pdfreader_user",
-      { clear = true }
-    )
-
-    -- Ручное обновление текущей страницы
+    vim.api.nvim_create_user_command("PDFOpen", function(args)
+      vim.g.pdfreader_embedded_open = true
+      local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(vim.fn.fnamemodify(args.args, ":p")))
+      vim.g.pdfreader_embedded_open = nil
+      if not ok then error(err) end
+    end, { nargs = 1, complete = "file", desc = "Open PDF inside Neovim (opt-in)" })
+    local group = vim.api.nvim_create_augroup("pdfreader_user", { clear = true })
     vim.api.nvim_create_autocmd("BufEnter", {
-      group = group,
-      pattern = "*.pdf",
-
+      group = group, pattern = "*.pdf",
       callback = function(args)
-        vim.keymap.set(
-          "n",
-          "r",
-          "<cmd>PDFReader redrawPage<cr>",
-          {
-            buffer = args.buf,
-            silent = true,
-            desc = "Обновить страницу PDF",
-          }
-        )
+        vim.keymap.set("n", "r", "<cmd>PDFReader redrawPage<cr>",
+          { buffer = args.buf, silent = true, desc = "Обновить страницу PDF" })
       end,
     })
-
-    -- Проверять, не пересобрался ли PDF снаружи
-    vim.opt.autoread = true
-
-    vim.api.nvim_create_autocmd({
-      "FocusGained",
-      "BufEnter",
-      "CursorHold",
-      "CursorHoldI",
-    }, {
-      group = group,
-
-      callback = function()
-        vim.cmd("silent! checktime")
-      end,
-    })
-
-    -- Перерисовать PDF после изменения файла на диске
-    vim.api.nvim_create_autocmd("FileChangedShellPost", {
-      group = group,
-      pattern = "*.pdf",
-
-      callback = function(args)
-        vim.api.nvim_buf_call(args.buf, function()
-          vim.cmd("silent! PDFReader redrawPage")
-        end)
-      end,
-    })
+    -- No global checktime polling: explicit redraw also works with external builds.
   end,
 }

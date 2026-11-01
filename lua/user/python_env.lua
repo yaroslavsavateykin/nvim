@@ -39,7 +39,7 @@ local path_separator = vim.fn.has "win32" == 1 and ";" or ":"
 --- Signature of the environment last applied per project root. Autocommands
 --- compare against it so the language server is only touched when the detected
 --- environment really changed.
-M.state = { signatures = {} }
+M.state = { signatures = {}, checks = {}, roots = {} }
 
 --------------------------------------------------------------------------------
 -- helpers
@@ -165,8 +165,10 @@ end
 function M.detect_root(bufnr)
   bufnr = resolve_bufnr(bufnr)
   local dir = buffer_dir(bufnr)
-
+  local cached = M.state.roots[bufnr]
+  if cached and cached.dir == dir then return cached.root end
   local root = vim.fs.root(dir, M.root_markers)
+  if root then M.state.roots[bufnr] = { dir = dir, root = root } end
   if root then return root end
 
   -- No marker anywhere above the file: fall back to the workspace of a Python
@@ -360,7 +362,9 @@ function M.apply_at(root, opts)
     if not client:is_stopped() then
       local plain, notebooks = client_buffers(client)
 
-      if #plain == 0 and #notebooks > 0 then
+      if root and client.root_dir and client.root_dir ~= root then
+        -- Refresh only this project, never leak the current interpreter into others.
+      elseif #plain == 0 and #notebooks > 0 then
         -- Notebook-only client: the kernel interpreter wins.
       else
         local client_root = client.root_dir or root or M.detect_root(nil)
@@ -431,7 +435,8 @@ function M.apply(opts)
   local bufnr = resolve_bufnr(opts.bufnr)
   local root = M.detect_root(bufnr)
 
-  apply_static(M.detect_at(root))
+  -- Per-client settings only. Mutating a global server config leaks across roots.
+  M.state.checks[root] = nil
   return M.apply_at(root, opts)
 end
 
@@ -522,8 +527,13 @@ function M.check(bufnr)
   if ft ~= "python" and not looks_like_python then return end
 
   local root = M.detect_root(bufnr)
+  local key = table.concat({ vim.env.CONDA_PREFIX or "", vim.env.VIRTUAL_ENV or "", vim.env.PYTHONPATH or "", vim.env.PATH or "" }, "\0")
+  local now = vim.uv.now()
+  local cached = M.state.checks[root]
+  if cached and cached.key == key and now - cached.time < 2000 then return end
+  M.state.checks[root] = { key = key, time = now }
   local env = M.detect_at(root)
-  local restarted, pushed = M.apply_at(root, { restart = true })
+  local restarted, pushed = M.apply_at(root, { restart = false })
 
   if restarted + pushed == 0 then return end
   report(
@@ -544,6 +554,9 @@ end
 local function setup_autocmds()
   local group = vim.api.nvim_create_augroup("UserPythonEnv", { clear = true })
 
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = group, callback = function(args) M.state.roots[args.buf] = nil end,
+  })
   vim.api.nvim_create_autocmd("DirChanged", {
     group = group,
     desc = "Re-check the Python environment after the working directory changed",

@@ -1,4 +1,6 @@
 local function format_typst(bufnr)
+  if vim.bo[bufnr].filetype ~= "typst" or vim.b[bufnr].large_buf
+    or not vim.bo[bufnr].modifiable or vim.bo[bufnr].buftype ~= "" then return end
   local fileencoding = vim.bo[bufnr].fileencoding
 
   if fileencoding ~= "" and fileencoding ~= "utf-8" then
@@ -18,7 +20,7 @@ local function format_typst(bufnr)
   require("conform").format({
     bufnr = bufnr,
     formatters = { "typstyle" },
-    timeout_ms = 3000,
+    timeout_ms = 1000,
     lsp_format = "never",
   })
 end
@@ -59,6 +61,7 @@ return {
     keys = {
       {
         "<leader>lf",
+        ft = "typst",
         function()
           format_typst(0)
         end,

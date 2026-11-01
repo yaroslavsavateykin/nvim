@@ -2,6 +2,11 @@ return {
   {
     "nickjvandyke/opencode.nvim",
     version = "*",
+    keys = {
+      { "<leader>oa", mode = { "n", "x" } }, { "<leader>os", mode = { "n", "x" } },
+      { "go", mode = { "n", "x" } }, { "goo" }, { "<leader>on" },
+      { "<leader>ou" }, { "<leader>or" }, { "<leader>oi" },
+    },
     config = function()
       vim.g.opencode_opts = {
         contexts = {

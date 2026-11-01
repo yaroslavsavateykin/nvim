@@ -86,6 +86,11 @@ return {
           desc = "Open binary files with the default system application",
 
           callback = function(args)
+            if vim.g.pdfreader_embedded_open and args.match:lower():match("%.pdf$") then
+              vim.bo[args.buf].buftype = "nofile"
+              vim.bo[args.buf].swapfile = false
+              return
+            end
             local path = vim.api.nvim_buf_get_name(args.buf)
 
             if path == "" then

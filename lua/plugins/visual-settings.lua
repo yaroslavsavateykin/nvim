@@ -9,9 +9,9 @@ return {
   {
     "nvim-tree/nvim-tree.lua",
 
-    -- Плагин должен загрузиться до VimEnter,
-    -- чтобы правильно обработать `nvim .` и `nvim file`
-    lazy = false,
+    -- VimEnter still handles `nvim .` / `nvim file`, without eager dependency loading.
+    event = "VimEnter",
+    cmd = { "NvimTreeToggle", "NvimTreeFocus", "NvimTreeOpen" },
 
     dependencies = {
       "nvim-tree/nvim-web-devicons",
@@ -63,14 +63,24 @@ return {
         -- Показывать файлы из .gitignore
         git_ignored = false,
 
-        custom = {},
+        custom = { "^node_modules$", "^__pycache__$", "^\\.venv$" },
         exclude = {},
       },
 
       git = {
         enable = true,
-        ignore = false,
+        ignore = true,
         timeout = 400,
+        cygwin_support = false,
+        disable_for_dirs = { vim.env.HOME },
+      },
+
+      filesystem_watchers = {
+        enable = false, -- reload on BufEnter / save or explicit R, not one watcher per expanded dir
+      },
+      reload_on_bufenter = true,
+      diagnostics = {
+        enable = false,
       },
 
       renderer = {
@@ -150,10 +160,7 @@ return {
       -- Автоматическое открытие дерева
       ------------------------------------------------------------------------
 
-      vim.api.nvim_create_autocmd("VimEnter", {
-        once = true,
-
-        callback = function(data)
+      local function open_startup_tree(data)
           -- Берём первый аргумент командной строки:
           --
           -- nvim .
@@ -239,8 +246,12 @@ return {
               vim.api.nvim_set_current_win(editor_window)
             end
           end)
-        end,
-      })
+      end
+      if vim.v.vim_did_enter == 1 then
+        open_startup_tree({ buf = vim.api.nvim_get_current_buf() })
+      else
+        vim.api.nvim_create_autocmd("VimEnter", { once = true, callback = open_startup_tree })
+      end
     end,
   },
 
